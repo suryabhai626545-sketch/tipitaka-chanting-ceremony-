@@ -35,10 +35,10 @@
    Replace ONLY these two values with your Supabase Project URL and anon/public key.
    Never put a service_role key here.
 ===================================================== */
-const SUPABASE_URL='PASTE_YOUR_SUPABASE_PROJECT_URL_HERE';
-const SUPABASE_ANON_KEY='PASTE_YOUR_SUPABASE_ANON_KEY_HERE';
+const SUPABASE_URL='https://wqynlioxbpfxcyvzhbni.supabase.co';
+const SUPABASE_ANON_KEY='sb_publishable_1oN8G7ItmBn_uh1ZH2o4yw_98Jfz7Zl';
 const sbReady=SUPABASE_URL.startsWith('https://') && !SUPABASE_ANON_KEY.startsWith('PASTE_');
-const supabase=sbReady?window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY):null;
+const sbClient=sbReady?window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY):null;
 const BUCKET='participant-documents';
 let current=null, currentRows=[];
 const $=id=>document.getElementById(id);
@@ -48,8 +48,8 @@ $('contact').addEventListener('click',e=>{if(e.target.id==='contact')closeContac
 function esc(v){return String(v??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]))}
 function showConfig(){alert('Website connection is not configured yet. Supabase Project URL and anon/public key need to be added in the CONFIG section of this HTML file. Do not use the service_role key.')}
 $('idType').addEventListener('change',()=>{const v=$('idType').value;$('idLabel').textContent=v?`${v} Number *`:'ID Number *';$('docLabel').textContent=v?`${v} Document *`:'Selected ID Document *'});
-async function uploadFile(file,regNo,kind){const safe=file.name.replace(/[^a-zA-Z0-9._-]/g,'_');const path=`${regNo}/${kind}-${Date.now()}-${safe}`;const {error}=await supabase.storage.from(BUCKET).upload(path,file,{upsert:false,contentType:file.type||undefined});if(error)throw error;return path}
-async function signedUrl(path,seconds=900){if(!path)return '';const {data,error}=await supabase.storage.from(BUCKET).createSignedUrl(path,seconds);if(error)throw error;return data.signedUrl}
+async function uploadFile(file,regNo,kind){const safe=file.name.replace(/[^a-zA-Z0-9._-]/g,'_');const path=`${regNo}/${kind}-${Date.now()}-${safe}`;const {error}=await sbClient.storage.from(BUCKET).upload(path,file,{upsert:false,contentType:file.type||undefined});if(error)throw error;return path}
+async function signedUrl(path,seconds=900){if(!path)return '';const {data,error}=await sbClient.storage.from(BUCKET).createSignedUrl(path,seconds);if(error)throw error;return data.signedUrl}
 $('form').addEventListener('submit',async e=>{
  e.preventDefault();
  if(!sbReady)return showConfig();
@@ -66,7 +66,7 @@ $('form').addEventListener('submit',async e=>{
    const photoPath=await uploadFile(photo,no,'photo');
    const docPath=await uploadFile(doc,no,'id');
    payload.photo_path=photoPath;payload.id_document_path=docPath;
-   const {error}=await supabase.from('registrations').insert(payload);
+   const {error}=await sbClient.from('registrations').insert(payload);
    if(error)throw error;
    current={...payload,photoFile:photo,photo_path:photoPath,id_document_path:docPath,idDocName:doc.name};
    $('successNo').textContent=no;fillCard(current);page('success');$('form').reset();
@@ -79,10 +79,10 @@ async function fillCard(r){
 }
 async function openAdminDashboard(){
  if(!sbReady)return showConfig();
- const {data:{user}}=await supabase.auth.getUser();
+ const {data:{user}}=await sbClient.auth.getUser();
  if(!user){showAdminLogin();return}
- const {data:admin}=await supabase.from('admin_users').select('id,email').eq('id',user.id).maybeSingle();
- if(!admin){alert('This account is not an authorised admin.');await supabase.auth.signOut();showAdminLogin();return}
+ const {data:admin}=await sbClient.from('admin_users').select('id,email').eq('id',user.id).maybeSingle();
+ if(!admin){alert('This account is not an authorised admin.');await sbClient.auth.signOut();showAdminLogin();return}
  await renderDash();
 }
 function showAdminLogin(){
@@ -92,11 +92,11 @@ function showAdminLogin(){
 }
 async function adminLogin(){
  const email=$("adminEmail").value.trim(),password=$("adminPassword").value;if(!email||!password)return alert('Email and password are required.');
- const {error}=await supabase.auth.signInWithPassword({email,password});if(error)return alert(error.message);await openAdminDashboard();
+ const {error}=await sbClient.auth.signInWithPassword({email,password});if(error)return alert(error.message);await openAdminDashboard();
 }
-async function adminLogout(){await supabase.auth.signOut();page('home');}
+async function adminLogout(){await sbClient.auth.signOut();page('home');}
 async function renderDash(){
- const {data:a,error}=await supabase.from('registrations').select('*').order('created_at',{ascending:false});
+ const {data:a,error}=await sbClient.from('registrations').select('*').order('created_at',{ascending:false});
  if(error){alert('Could not load registrations: '+error.message);return}
  currentRows=a||[];const c=(k,v)=>currentRows.filter(x=>x[k]===v).length;
  $("stats").innerHTML=`<div class="stat"><b>${currentRows.length}</b><span>Total</span></div><div class="stat"><b>${c('status','Pending')}</b><span>Pending</span></div><div class="stat"><b>${c('status','Verified')}</b><span>Verified</span></div><div class="stat"><b>${c('status','Rejected')}</b><span>Rejected</span></div><div class="stat"><b>${c('gender','Male')}</b><span>Male</span></div><div class="stat"><b>${c('gender','Female')}</b><span>Female</span></div>`;
@@ -109,8 +109,8 @@ async function check(i){
 }
 async function replaceDoc(id,btn){
  const f=btn.parentElement.querySelector('#replacement').files[0];if(!f)return alert('Select a corrected document.');
- btn.disabled=true;try{const r=currentRows.find(x=>x.id===id);const path=await uploadFile(f,r.registration_no,'id-corrected');const {error}=await supabase.from('registrations').update({id_document_path:path,status:'Pending',updated_at:new Date().toISOString()}).eq('id',id);if(error)throw error;btn.closest('.modal').remove();await renderDash();alert('Corrected document uploaded. Status is Pending again.')}catch(err){alert(err.message||'Upload failed')}finally{btn.disabled=false}
+ btn.disabled=true;try{const r=currentRows.find(x=>x.id===id);const path=await uploadFile(f,r.registration_no,'id-corrected');const {error}=await sbClient.from('registrations').update({id_document_path:path,status:'Pending',updated_at:new Date().toISOString()}).eq('id',id);if(error)throw error;btn.closest('.modal').remove();await renderDash();alert('Corrected document uploaded. Status is Pending again.')}catch(err){alert(err.message||'Upload failed')}finally{btn.disabled=false}
 }
-async function setStatus(id,s){const {error}=await supabase.from('registrations').update({status:s,updated_at:new Date().toISOString()}).eq('id',id);if(error)return alert(error.message);document.querySelectorAll('.modal').forEach(x=>x.remove());await renderDash()}
+async function setStatus(id,s){const {error}=await sbClient.from('registrations').update({status:s,updated_at:new Date().toISOString()}).eq('id',id);if(error)return alert(error.message);document.querySelectorAll('.modal').forEach(x=>x.remove());await renderDash()}
 </script>
 </body></html>
